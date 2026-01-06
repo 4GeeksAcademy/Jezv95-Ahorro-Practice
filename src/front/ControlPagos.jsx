@@ -159,11 +159,7 @@ const ControlPagos = () => {
             <h4 className="fw-bold text-primary mb-0">${totalRecaudado.toLocaleString()}</h4>
             <small className="text-muted">recaudado de ${metaTotal.toLocaleString()}</small>
           </div>
-            <div className='d-flex justify-content-center align-items-center m-4'>
-            <button onClick={generarPDF} className="btn btn-outline-danger shadow-sm fw-bold ">
-            <i className="bi bi-file-earmark-pdf"></i> Descargar PDF
-            </button>
-            </div>
+            
         </div>
         {/* // Dentro del return, arriba de la tarjeta del gráfico: */}
         
