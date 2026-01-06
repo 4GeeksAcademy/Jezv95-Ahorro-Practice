@@ -3,86 +3,126 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
-const ControlPagos = () => {
-  // Configuración de la API
-  const API_URL = "https://expert-bassoon-7v99xp4p5v7r2qr7-3001.app.github.dev"; 
-  
-  // Estados
-  const [participantes, setParticipantes] = useState([]); // Inicia vacío
-  const [cargando, setCargando] = useState(true);
+const ControlPagosCopia = () => {
   const [metaTotal, setMetaTotal] = useState(3720000);
-  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState(null);
-  
-  // Estados para el formulario (faltaban en tu código)
   const [montoCuota, setMontoCuota] = useState('');
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
+  const generarPDF = () => {
+    const doc = new jsPDF();
+    
+    // Título y Encabezado
+    doc.setFontSize(18);
+    doc.text('Reporte de Control de Meta Grupal', 14, 20);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Fecha del reporte: ${new Date().toLocaleDateString()}`, 14, 28);
+    
+    // Resumen General
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text('Resumen General', 14, 40);
+    
+    const resumenData = [
+      ['Meta Total', `$${metaTotal.toLocaleString()}`],
+      ['Total Recaudado', `$${totalRecaudado.toLocaleString()}`],
+      ['Restante', `$${(metaTotal - totalRecaudado).toLocaleString()}`],
+      ['Progreso', `${porcentajeTotal.toFixed(2)}%`]
+    ];
 
-  // 1. CARGAR DATOS DESDE LA API
-  const cargarDatos = async () => {
-    try {
-      setCargando(true);
-      const resp = await fetch(`${API_URL}/participantes`);
-      if (!resp.ok) throw new Error("Error en la respuesta de la red");
-      const data = await resp.json();
-      setParticipantes(data);
-    } catch (err) {
-      console.error("Error cargando API", err);
-    } finally {
-      setCargando(false);
-    }
+    doc.autoTable({
+      startY: 45,
+      head: [['Concepto', 'Monto / Valor']],
+      body: resumenData,
+      theme: 'striped',
+      headStyles: { fillColor: [13, 110, 253] } // Azul Bootstrap
+    });
+
+    // Detalle por Participante
+    doc.text('Detalle por Participante', 14, doc.lastAutoTable.finalY + 15);
+
+    const detalleParticipantes = participantes.map(p => [
+      p.nombre,
+      `$${p.cuotaMensual.toLocaleString()}`,
+      p.pagos.length,
+      `$${p.pagos.reduce((sum, pg) => sum + pg.monto, 0).toLocaleString()}`
+    ]);
+
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 20,
+      head: [['Nombre', 'Cuota Mensual', 'Cant. Pagos', 'Total Aportado']],
+      body: detalleParticipantes,
+      theme: 'grid',
+      headStyles: { fillColor: [108, 117, 125] } // Gris Bootstrap
+    });
+
+    // Pie de página
+    doc.setFontSize(10);
+    doc.text('Reporte generado automáticamente por Sistema de Control de Pagos.', 14, doc.internal.pageSize.height - 10);
+
+    doc.save(`Reporte_Meta_Grupal_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Carga inicial al montar el componente
-  useEffect(() => { 
-    cargarDatos(); 
-  }, []);
+  // --- LÓGICA DE PERSISTENCIA ---
+  
+  // Inicializamos el estado intentando leer de LocalStorage
+  const [participantes, setParticipantes] = useState(() => {
+    const datosGuardados = localStorage.getItem('controlPagos_participantes');
+    if (datosGuardados) {
+      return JSON.parse(datosGuardados);
+    } else {
+      // Datos iniciales si no hay nada guardado
+      return [
+        { id: 1, nombre: 'Elio', cuotaMensual: 70000, pagos: [], color: 'bg-primary' },
+        { id: 2, nombre: 'Manu E', cuotaMensual: 70000, pagos: [], color: 'bg-success' },
+        { id: 3, nombre: 'Manu A', cuotaMensual: 70000, pagos: [], color: 'bg-info' },
+        { id: 4, nombre: 'Chue', cuotaMensual: 30000, pagos: [], color: 'bg-warning' },
+        { id: 5, nombre: 'German', cuotaMensual: 70000, pagos: [], color: 'bg-danger' },
+      ];
+    }
+  });
 
-  // 2. AGREGAR PAGO
-  const agregarPago = async (id) => {
+  // Guardar en LocalStorage cada vez que cambien los participantes
+  useEffect(() => {
+    localStorage.setItem('controlPagos_participantes', JSON.stringify(participantes));
+  }, [participantes]);
+
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState(null);
+
+  // --- FUNCIONES ---
+
+  const agregarPago = (id) => {
     const valor = parseFloat(montoCuota);
     if (isNaN(valor) || valor <= 0) return alert("Monto no válido");
 
-    try {
-      const resp = await fetch(`${API_URL}/pagos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          monto: valor,
-          fecha: fechaPago,
-          participante_id: id
-        })
-      });
-
-      if (resp.ok) {
-        setMontoCuota('');
-        await cargarDatos(); // Actualiza la lista desde la DB
-        setUsuarioSeleccionado(null); 
+    const nuevosParticipantes = participantes.map(p => {
+      if (p.id === id) {
+        const nuevoRegistro = { monto: valor, fecha: fechaPago };
+        return { ...p, pagos: [...p.pagos, nuevoRegistro] };
       }
-    } catch (err) {
-      alert("Error al guardar el pago");
-    }
+      return p;
+    });
+
+    setParticipantes(nuevosParticipantes);
+    setMontoCuota('');
+    // Actualizar el modal con los datos frescos
+    setUsuarioSeleccionado(nuevosParticipantes.find(p => p.id === id));
   };
 
-  // 3. ELIMINAR PAGO
-  const eliminarPago = async (pago) => {
-    if (!window.confirm("¿Eliminar este registro?")) return;
-    
-    try {
-      // Ajusta esta ruta según cómo definiste el DELETE en tu FastAPI
-      await fetch(`${API_URL}/pagos/${usuarioSeleccionado.id}/${pago.fecha}/${pago.monto}`, {
-        method: 'DELETE'
-      });
-      await cargarDatos();
-      setUsuarioSeleccionado(null);
-    } catch (err) {
-      alert("Error al eliminar");
-    }
+  const eliminarPago = (pagoAEliminar) => {
+    if (!window.confirm("¿Eliminar registro?")) return;
+    const nuevosParticipantes = participantes.map(p => {
+      if (p.id === usuarioSeleccionado.id) {
+        return { ...p, pagos: p.pagos.filter(pago => pago !== pagoAEliminar) };
+      }
+      return p;
+    });
+    setParticipantes(nuevosParticipantes);
+    setUsuarioSeleccionado(nuevosParticipantes.find(p => p.id === usuarioSeleccionado.id));
   };
 
-  // --- CÁLCULOS (Protegidos contra arrays nulos) ---
-  const totalRecaudado = participantes.reduce((acc, p) => 
-    acc + (p.pagos ? p.pagos.reduce((sum, pg) => sum + pg.monto, 0) : 0), 0
-  );
+  // --- CÁLCULOS ---
+  const totalRecaudado = participantes.reduce((acc, p) => acc + p.pagos.reduce((sum, pg) => sum + pg.monto, 0), 0);
   const restanteMeta = metaTotal - totalRecaudado;
   const porcentajeTotal = Math.min((totalRecaudado / metaTotal) * 100, 100);
 
@@ -92,13 +132,9 @@ const ControlPagos = () => {
   ];
   const COLORS = ['#0d6efd', '#e9ecef'];
 
-  if (cargando) return <div className="text-center py-5">Cargando datos de la nube...</div>;
-
   return (
     <div className="container py-4" style={{ maxWidth: '700px' }}>
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="fw-bold mb-0">💃🏽 Cuotas Negrita 💃🏽</h2>
-      </div>
+      <h2 className="text-center mb-4 fw-bold">💃🏽 Control Cuotas Negrita 💃🏽</h2>
 
       {/* GRÁFICO CIRCULAR */}
       <div className="card shadow-sm mb-4 border-0 rounded-4">
@@ -123,31 +159,41 @@ const ControlPagos = () => {
             <h4 className="fw-bold text-primary mb-0">${totalRecaudado.toLocaleString()}</h4>
             <small className="text-muted">recaudado de ${metaTotal.toLocaleString()}</small>
           </div>
+            
         </div>
+        {/* // Dentro del return, arriba de la tarjeta del gráfico: */}
+        
+       
+        
       </div>
+
 
       {/* LISTADO DE PERSONAS */}
       <div className="list-group shadow-sm rounded-4 overflow-hidden">
         {participantes.map((p) => {
-          const totalPagado = p.pagos ? p.pagos.reduce((sum, pg) => sum + pg.monto, 0) : 0;
+          const totalPagado = p.pagos.reduce((sum, pg) => sum + pg.monto, 0);
           const metaInd = p.cuotaMensual * 12;
           const porcentajeInd = Math.min((totalPagado / metaInd) * 100, 100);
 
           return (
-            <button key={p.id} onClick={() => setUsuarioSeleccionado(p)} className="list-group-item list-group-item-action border-0 py-3">
+            <button 
+              key={p.id}
+              onClick={() => setUsuarioSeleccionado(p)}
+              className="list-group-item list-group-item-action border-0 py-3"
+            >
               <div className="d-flex justify-content-between mb-1">
                 <span className="fw-bold">{p.nombre}</span>
                 <span className="fw-bold text-muted">${totalPagado.toLocaleString()}</span>
               </div>
               <div className="progress" style={{ height: '8px' }}>
-                <div className={`progress-bar ${p.color || 'bg-primary'}`} style={{ width: `${porcentajeInd}%` }}></div>
+                <div className={`progress-bar ${p.color}`} style={{ width: `${porcentajeInd}%` }}></div>
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* MODAL */}
+      {/* MODAL (Simulado con clases Bootstrap) */}
       {usuarioSeleccionado && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -158,6 +204,7 @@ const ControlPagos = () => {
               </div>
               
               <div className="modal-body">
+                {/* FORMULARIO AGREGAR */}
                 <div className="p-3 bg-light rounded-3 mb-4 border">
                   <div className="row g-2">
                     <div className="col-6">
@@ -180,9 +227,10 @@ const ControlPagos = () => {
                   </div>
                 </div>
 
+                {/* HISTORIAL */}
                 <p className="small fw-bold text-uppercase text-muted mb-2">Últimos Movimientos</p>
                 <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                  {(usuarioSeleccionado.pagos ? [...usuarioSeleccionado.pagos].reverse() : []).map((pago, idx) => (
+                  {[...usuarioSeleccionado.pagos].reverse().map((pago, idx) => (
                     <div key={idx} className="d-flex justify-content-between align-items-center py-2 border-bottom">
                       <div>
                         <div className="fw-bold text-success">+ ${pago.monto.toLocaleString()}</div>
@@ -191,9 +239,7 @@ const ControlPagos = () => {
                       <button className="btn btn-sm btn-light text-danger" onClick={() => eliminarPago(pago)}>✕</button>
                     </div>
                   ))}
-                  {(!usuarioSeleccionado.pagos || usuarioSeleccionado.pagos.length === 0) && (
-                    <p className="text-center text-muted py-3">Sin pagos aún</p>
-                  )}
+                  {usuarioSeleccionado.pagos.length === 0 && <p className="text-center text-muted py-3">Sin pagos aún</p>}
                 </div>
               </div>
               <div className="modal-footer border-0">
@@ -207,4 +253,4 @@ const ControlPagos = () => {
   );
 };
 
-export default ControlPagos;
+export default ControlPagosCopia;
